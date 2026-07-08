@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>架電トラッカー</title>
+<style>
+  :root{
+    --bg:#0f1218; --panel:#171c26; --panel2:#1e2532; --line:#2b3444;
+    --ink:#e8edf5; --sub:#8a97ab; --mut:#5d6b81;
+    --s1:#3b82f6; --s2:#22a2c4; --s3:#38b48b; --s4:#e0a92c; --s5:#e7533b;
+    --ok:#38b48b; --warn:#e0a92c; --bad:#e7533b;
+    --accent:#e7533b;
+    --r:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+    font-feature-settings:"palt";}
+  body{padding:14px;max-width:640px;margin:0 auto;padding-bottom:80px;}
+  h1{font-size:17px;letter-spacing:.02em;margin:0;font-weight:800;}
+  .sub{color:var(--sub);font-size:12px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:12px;}
+  .row{display:flex;gap:8px;align-items:center;}
+  .between{justify-content:space-between;}
+  label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px;font-weight:600;}
+  input[type=text],input[type=number],input[type=date],textarea{
+    width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    color:var(--ink);padding:11px 12px;font-size:15px;font-family:inherit;}
+  textarea{resize:vertical;min-height:90px;line-height:1.6;}
+  input:focus,textarea:focus{outline:none;border-color:var(--s1);}
+  .btn{border:none;border-radius:11px;padding:12px 16px;font-size:14px;font-weight:700;
+    cursor:pointer;font-family:inherit;transition:transform .05s,filter .15s;}
+  .btn:active{transform:scale(.97);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(.3);}
+  .btn:disabled:active{transform:none;}
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line);}
+  .btn-block{width:100%;}
+  .hidden{display:none!important;}
+
+  /* header bar */
+  .topbar{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:14px;}
+  .metrics{display:flex;gap:7px;}
+  .metric{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 11px;text-align:center;min-width:62px;}
+  .metric .n{font-size:20px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;}
+  .metric .l{font-size:10px;color:var(--sub);margin-top:3px;}
+
+  /* progress to goal */
+  .goalbar{height:9px;background:var(--panel2);border-radius:99px;overflow:hidden;margin-top:9px;}
+  .goalbar > i{display:block;height:100%;background:linear-gradient(90deg,var(--s1),var(--s3));border-radius:99px;transition:width .3s;}
+
+  /* stage picker */
+  .stage-q{font-size:13px;color:var(--sub);margin-bottom:9px;font-weight:600;}
+  .stages{display:flex;flex-direction:column;gap:8px;}
+  .stage{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1.5px solid var(--line);
+    border-radius:12px;padding:13px 14px;cursor:pointer;transition:border-color .12s,background .12s;}
+  .stage:active{background:#232c3b;}
+  .stage .dot{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:13px;color:#0b0e13;flex-shrink:0;}
+  .stage .tx{font-size:14.5px;font-weight:700;}
+  .stage .hint{font-size:11px;color:var(--mut);margin-left:auto;}
+  .s1 .dot{background:var(--s1);} .s2 .dot{background:var(--s2);}
+  .s3 .dot{background:var(--s3);} .s4 .dot{background:var(--s4);} .s5 .dot{background:var(--s5);}
+
+  /* reason picker */
+  .reason-head{display:flex;align-items:center;gap:9px;margin-bottom:12px;}
+  .reason-head .badge{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#0b0e13;}
+  .reason-head .t{font-size:14px;font-weight:800;}
+  .reason-head .t small{display:block;font-size:11px;color:var(--sub);font-weight:600;}
+  .reasons{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .reason{background:var(--panel2);border:1.5px solid var(--line);border-radius:11px;padding:14px 10px;
+    font-size:13.5px;font-weight:700;text-align:center;cursor:pointer;line-height:1.35;min-height:56px;
+    display:flex;align-items:center;justify-content:center;}
+  .reason:active{background:#232c3b;border-color:var(--accent);}
+
+  /* funnel */
+  .funnel{display:flex;flex-direction:column;gap:5px;margin-top:4px;}
+  .frow{display:flex;align-items:center;gap:10px;}
+  .frow .fl{width:118px;font-size:12px;color:var(--sub);font-weight:600;flex-shrink:0;}
+  .fbar-wrap{flex:1;background:var(--panel2);border-radius:7px;overflow:hidden;height:26px;position:relative;}
+  .fbar{height:100%;border-radius:7px;display:flex;align-items:center;padding-left:9px;
+    font-size:12px;font-weight:800;color:#0b0e13;min-width:24px;transition:width .4s;font-variant-numeric:tabular-nums;}
+  .frow .fr{width:52px;text-align:right;font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums;}
+  .fb1{background:var(--s1);} .fb2{background:var(--s2);} .fb3{background:var(--s3);}
+  .fb4{background:var(--s4);} .fb5{background:var(--s5);}
+
+  /* bottleneck */
+  .bottleneck{background:linear-gradient(135deg,#2a1a17,#1e2532);border:1px solid #4a2b24;
+    border-radius:12px;padding:14px;margin-top:12px;}
+  .bottleneck .tag{font-size:11px;color:var(--accent);font-weight:800;letter-spacing:.05em;}
+  .bottleneck .big{font-size:16px;font-weight:800;margin:5px 0 3px;}
+  .bottleneck .why{font-size:12.5px;color:var(--sub);line-height:1.55;}
+
+  /* reason breakdown */
+  .rb-group{margin-bottom:12px;}
+  .rb-title{font-size:12px;font-weight:800;margin-bottom:6px;display:flex;align-items:center;gap:7px;}
+  .rb-title .chip{width:16px;height:16px;border-radius:5px;}
+  .rb-item{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px;}
+  .rb-item .rbl{width:150px;color:var(--sub);}
+  .rb-item .rbbar{flex:1;height:8px;background:var(--panel2);border-radius:99px;overflow:hidden;}
+  .rb-item .rbbar > i{display:block;height:100%;border-radius:99px;background:var(--mut);}
+  .rb-item .rbn{width:24px;text-align:right;font-variant-numeric:tabular-nums;color:var(--sub);}
+
+  /* log list */
+  .log{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+  .chip-log{font-size:11px;padding:3px 8px;border-radius:99px;font-weight:700;color:#0b0e13;font-variant-numeric:tabular-nums;}
+
+  /* sticky action */
+  .sticky{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(180deg,transparent,var(--bg) 22%);
+    padding:14px;padding-top:26px;display:flex;gap:8px;max-width:640px;margin:0 auto;}
+
+  /* report text */
+  .report-out{white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    padding:14px;font-size:12.5px;line-height:1.65;font-family:ui-monospace,"SF Mono",Menlo,monospace;color:var(--ink);
+    max-height:340px;overflow:auto;}
+  .tabs{display:flex;gap:6px;margin-bottom:12px;}
+  .tab{flex:1;text-align:center;padding:9px;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;
+    background:var(--panel2);border:1px solid var(--line);color:var(--sub);}
+  .tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%);background:var(--ok);color:#08120c;
+    padding:10px 18px;border-radius:99px;font-weight:800;font-size:13px;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;z-index:99;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+  .divider{height:1px;background:var(--line);margin:14px 0;}
+  .mini{font-size:11px;color:var(--mut);line-height:1.5;}
+  .undo{font-size:12px;color:var(--accent);font-weight:700;cursor:pointer;}
+  details summary{cursor:pointer;font-size:12px;color:var(--sub);font-weight:600;}
+  .kbd{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:11px;}
+  .list-picker{display:flex;flex-wrap:wrap;gap:7px;}
+  .lchip{background:var(--panel2);border:1.5px solid var(--line);border-radius:9px;padding:9px 14px;
+    font-size:13px;font-weight:700;cursor:pointer;}
+  .lchip.on{background:var(--s1);border-color:var(--s1);color:#0b0e13;}
+  /* per-call memo */
+  .memo-wrap{margin-top:12px;}
+  .memo-wrap textarea{min-height:52px;font-size:14px;}
+  .memo-actions{display:flex;gap:8px;margin-top:8px;}
+  /* memo timeline in finish */
+  .mt-item{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12.5px;}
+  .mt-item:last-child{border-bottom:none;}
+  .mt-badge{width:22px;height:22px;border-radius:7px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;color:#0b0e13;}
+  .mt-body{flex:1;line-height:1.5;}
+  .mt-body .mt-no{color:var(--mut);font-size:11px;font-weight:700;}
+  .good-more{display:flex;flex-direction:column;gap:14px;}
+  .gm-good label{color:var(--ok)!important;}
+  .gm-more label{color:var(--warn)!important;}
+  .gm-na label{color:var(--s1)!important;}
+  /* done / 労い */
+  .done-wrap{text-align:center;padding:48px 20px 20px;}
+  .done-mark{font-size:56px;line-height:1;margin-bottom:20px;animation:pop .5s ease;}
+  @keyframes pop{0%{transform:scale(.3);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+  .done-head{font-size:22px;font-weight:800;letter-spacing:.01em;margin-bottom:14px;}
+  .done-msg{font-size:14.5px;color:var(--sub);line-height:1.75;max-width:420px;margin:0 auto 26px;}
+  .done-stats{display:inline-flex;gap:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:22px;}
+  .done-stats .ds{padding:16px 22px;border-right:1px solid var(--line);}
+  .done-stats .ds:last-child{border-right:none;}
+  .done-stats .ds .dn{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1;}
+  .done-stats .ds .dl{font-size:11px;color:var(--sub);margin-top:5px;}
+  .done-word{font-size:13px;color:var(--mut);font-style:italic;line-height:1.7;max-width:400px;margin:0 auto;}
+  .done-foot{text-align:center;padding:30px 0;}
+  .done-actions{max-width:420px;margin:0 auto;padding:0 8px;}
+  .done-hint{font-size:11px;color:var(--mut);text-align:center;margin-top:8px;line-height:1.5;}
+  .back-top{font-size:12px;color:var(--mut);font-weight:600;cursor:pointer;padding:8px 14px;border:1px solid var(--line);border-radius:99px;}
+  .back-top:active{background:var(--panel2);}
+</style>
+</head>
+<body>
+
+<!-- ============ SETUP ============ -->
+<section id="setup" class="card">
+  <h1>架電トラッカー <span class="sub">セットアップ</span></h1>
+  <div style="height:14px"></div>
+  <div class="row" style="gap:10px;flex-wrap:wrap">
+    <div style="flex:1;min-width:130px">
+      <label>日付</label>
+      <input type="date" id="in-date">
+    </div>
+    <div style="flex:1;min-width:110px">
+      <label>担当者名</label>
+      <input type="text" id="in-name" placeholder="例：志村">
+    </div>
+  </div>
+  <div style="height:12px"></div>
+  <div>
+    <label>かけているリスト（媒体）</label>
+    <div class="list-picker" id="list-picker">
+      <span class="lchip" onclick="pickList(this,'Wantedly')">Wantedly</span>
+      <span class="lchip" onclick="pickList(this,'Engage')">Engage</span>
+      <span class="lchip" onclick="pickList(this,'ハローワーク')">ハローワーク</span>
+      <span class="lchip" onclick="pickList(this,'その他')">その他</span>
+    </div>
+    <input type="text" id="in-list" class="hidden" placeholder="媒体名を入力" style="margin-top:8px">
+  </div>
+  <div style="height:12px"></div>
+  <div class="row" style="gap:10px">
+    <div style="flex:1">
+      <label>目標架電数</label>
+      <input type="number" id="in-goal" value="93" inputmode="numeric">
+    </div>
+    <div style="flex:1">
+      <label>目標アポ数</label>
+      <input type="number" id="in-apo" value="3" inputmode="numeric">
+    </div>
+  </div>
+  <div class="divider"></div>
+  <details>
+    <summary>途中データから再開する</summary>
+    <div style="height:10px"></div>
+    <label>引き継ぎコードを貼り付け</label>
+    <textarea id="resume-box" placeholder="前回出力した引き継ぎコードをここに貼り付け"></textarea>
+    <div style="height:8px"></div>
+    <button class="btn btn-ghost btn-block" onclick="resumeFromCode()">読み込んで再開</button>
+  </details>
+  <div style="height:14px"></div>
+  <button class="btn btn-primary btn-block" onclick="startSession()">開始する</button>
+</section>
+
+<!-- ============ TRACKER ============ -->
+<section id="tracker" class="hidden">
+
+  <div class="topbar">
+    <div>
+      <h1 id="hdr-title">架電中</h1>
+      <div class="sub" id="hdr-sub"></div>
+    </div>
+    <div class="metrics">
+      <div class="metric"><div class="n" id="m-calls">0</div><div class="l">架電</div></div>
+      <div class="metric"><div class="n" id="m-apo">0</div><div class="l">アポ</div></div>
+      <div class="metric"><div class="n" id="m-rate">0%</div><div class="l">達成</div></div>
+    </div>
+  </div>
+  <div class="card" style="padding:12px 16px">
+    <div class="row between"><span class="sub" style="font-size:11px">目標 <span id="g-cur">0</span> / <span id="g-goal">93</span></span><span class="undo" id="undo-btn" onclick="undoLast()">↩ 直前を取消</span></div>
+    <div class="goalbar"><i id="goalfill" style="width:0%"></i></div>
+    <div class="log" id="log-strip"></div>
+  </div>
+
+  <!-- STEP A: stage -->
+  <div id="step-stage" class="card">
+    <div class="stage-q">この架電、どこまで進んだ？</div>
+    <div class="stages">
+      <div class="stage s1" onclick="pickStage(1)"><span class="dot">1</span><span class="tx">受付ブロック止まり</span><span class="hint">突破できず</span></div>
+      <div class="stage s2" onclick="pickStage(2)"><span class="dot">2</span><span class="tx">担当接触止まり</span><span class="hint">会話入れず</span></div>
+      <div class="stage s3" onclick="pickStage(3)"><span class="dot">3</span><span class="tx">有効会話止まり</span><span class="hint">前進せず</span></div>
+      <div class="stage s4" onclick="pickStage(4)"><span class="dot">4</span><span class="tx">クロージング止まり</span><span class="hint">クローズ失敗</span></div>
+      <div class="stage s5" onclick="pickStage(5)"><span class="dot">5</span><span class="tx">アポ獲得！</span><span class="hint">成功</span></div>
+    </div>
+  </div>
+
+  <!-- STEP B: reason -->
+  <div id="step-reason" class="card hidden">
+    <div class="reason-head">
+      <span class="badge" id="rz-badge">1</span>
+      <span class="t" id="rz-title">受付で止まった要因は？<small>1タップで記録・次へ</small></span>
+    </div>
+    <div class="reasons" id="rz-list"></div>
+    <div style="height:10px"></div>
+    <button class="btn btn-ghost btn-block" onclick="backToStage()" style="font-size:12px;padding:9px">← 段階を選び直す</button>
+  </div>
+
+  <!-- STEP C: optional memo -->
+  <div id="step-memo" class="card hidden">
+    <div class="reason-head">
+      <span class="badge" id="mz-badge">1</span>
+      <span class="t" id="mz-title">記録した<small id="mz-reason"></small></span>
+    </div>
+    <div class="memo-wrap">
+      <label>気づきメモ（任意）</label>
+      <textarea id="call-memo" placeholder="例：受付の名乗りを変えたら少し粘れた（下のボタンで次へ）"></textarea>
+      <div class="memo-actions">
+        <button class="btn btn-ghost" style="flex:1" onclick="saveCallMemo(true)">スキップして次へ</button>
+        <button class="btn btn-primary" id="memo-save-btn" style="flex:1" onclick="saveCallMemo(false)" disabled>メモを残して次へ</button>
+      </div>
+      <button class="btn btn-ghost btn-block" id="memo-back-btn" onclick="backFromMemo()" style="font-size:12px;padding:9px;margin-top:8px">← 要因を選び直す</button>
+    </div>
+  </div>
+
+  <!-- live funnel -->
+  <div class="card">
+    <div class="row between" style="margin-bottom:10px"><span class="sub" style="font-weight:700;font-size:12px">ファネル（リアルタイム）</span><span class="mini" id="funnel-note"></span></div>
+    <div class="funnel" id="funnel"></div>
+  </div>
+
+  <div class="sticky">
+    <button class="btn btn-ghost" style="flex:1" onclick="openFinish()">締める / 引き継ぎ</button>
+  </div>
+</section>
+
+<!-- ============ FINISH / REPORT ============ -->
+<section id="finish" class="hidden">
+  <div class="topbar">
+    <div><h1>本日のまとめ</h1><div class="sub" id="fin-sub"></div></div>
+    <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="backToTracker()">← 戻る</button>
+  </div>
+
+  <div class="card">
+    <div class="metrics" style="justify-content:space-between">
+      <div class="metric" style="flex:1"><div class="n" id="f-calls">0</div><div class="l">総架電</div></div>
+      <div class="metric" style="flex:1"><div class="n" id="f-apo">0</div><div class="l">アポ</div></div>
+      <div class="metric" style="flex:1"><div class="n" id="f-conv">0%</div><div class="l">アポ率</div></div>
+      <div class="metric" style="flex:1"><div class="n" id="f-rate">0%</div><div class="l">目標達成</div></div>
+    </div>
+    <div style="height:14px"></div>
+    <div class="funnel" id="f-funnel"></div>
+    <div class="bottleneck" id="f-bottleneck"></div>
+  </div>
+
+  <div class="card">
+    <div class="sub" style="font-weight:700;font-size:12px;margin-bottom:12px">要因の内訳（どこで・なぜ落ちたか）</div>
+    <div id="f-breakdown"></div>
+  </div>
+
+  <!-- memo timeline -->
+  <div class="card" id="memo-card">
+    <div class="sub" style="font-weight:700;font-size:12px;margin-bottom:6px">架電中の気づき（時系列）</div>
+    <div class="mini" style="margin-bottom:10px">GOOD / MORE / NA を書く前に、その日の生の気づきを見返す。</div>
+    <div id="f-memos"></div>
+  </div>
+
+  <!-- GOOD / MORE / NA -->
+  <div class="card">
+    <div class="good-more">
+      <div class="gm-good">
+        <label style="font-size:13px;font-weight:800">GOOD｜今日 機能した動き</label>
+        <div class="mini" style="margin-bottom:9px">再現したい・良かった行動を。次も残す。</div>
+        <textarea id="good-box" placeholder="例：受付で目的を先に言い切ったら取次率が上がった。"></textarea>
+      </div>
+      <div class="gm-more">
+        <label style="font-size:13px;font-weight:800">MORE｜足りなかったこと</label>
+        <div class="mini" style="margin-bottom:9px">↑のボトルネックから見える、現状の課題・伸びしろ。</div>
+        <textarea id="more-box" placeholder="例：③有効会話で切られる。課題を引き出す前にこちらが喋りすぎている。"></textarea>
+      </div>
+      <div class="gm-na">
+        <label style="font-size:13px;font-weight:800">NA｜GAPを埋めるアクション</label>
+        <div class="mini" style="margin-bottom:9px">MOREに対して、明日から変える<b>具体行動</b>を1つ。「頑張る」ではなく「〜する」で。</div>
+        <textarea id="na-box" placeholder="例：冒頭30秒で課題仮説を先出しし、相手に喋らせる導入に変える。"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" id="tab-report" onclick="switchTab('report')">Slack日報</div>
+      <div class="tab" id="tab-handoff" onclick="switchTab('handoff')">引き継ぎコード</div>
+    </div>
+    <div id="pane-report">
+      <div class="report-out" id="report-text"></div>
+      <div style="height:10px"></div>
+      <button class="btn btn-primary btn-block" onclick="copyReport()">日報をコピー</button>
+    </div>
+    <div id="pane-handoff" class="hidden">
+      <div class="mini" style="margin-bottom:8px">途中で閉じる場合はこれをコピーして保存。次回セットアップで貼れば続きから再開できる。</div>
+      <div class="report-out" id="handoff-text" style="max-height:160px"></div>
+      <div style="height:10px"></div>
+      <button class="btn btn-ghost btn-block" onclick="copyHandoff()">引き継ぎコードをコピー</button>
+    </div>
+  </div>
+
+  <div style="height:4px"></div>
+  <button class="btn btn-primary btn-block" style="padding:15px;font-size:15px" onclick="endSession()">架電終了</button>
+  <div style="height:24px"></div>
+</section>
+
+<!-- ============ DONE / 労い ============ -->
+<section id="done" class="hidden">
+  <div class="done-wrap">
+    <div class="done-mark">🎉</div>
+    <div class="done-head" id="done-head">今日もお疲れさまでした。</div>
+    <div class="done-msg" id="done-msg"></div>
+    <div class="done-stats" id="done-stats"></div>
+    <div class="done-word" id="done-word"></div>
+  </div>
+  <div class="done-actions">
+    <button class="btn btn-primary btn-block" style="padding:15px;font-size:15px" onclick="copyReport()">📋 日報をコピー（コード同梱）</button>
+    <div class="done-hint">このままSlackの日報チャンネルに貼り付け。集約用データも一緒に入っています。</div>
+    <button class="btn btn-ghost btn-block" onclick="doneToFinish()" style="margin-top:10px">← まとめに戻る（GOOD/MORE/NAを直す）</button>
+  </div>
+  <div class="done-foot">
+    <span class="back-top" onclick="backToStart()">↩ 先頭に戻る</span>
+  </div>
+</section>
+
+<div class="toast" id="toast">コピーしました</div>
+
+<script>
+/* ---------- data model ---------- */
+const STAGE_LABEL = {
+  1:"受付ブロック止まり", 2:"担当接触止まり", 3:"有効会話止まり", 4:"クロージング止まり", 5:"アポ獲得"
+};
+const STAGE_SHORT = {1:"受付",2:"接触",3:"有効会話",4:"クロージング",5:"アポ"};
+const STAGE_COLOR = {1:"var(--s1)",2:"var(--s2)",3:"var(--s3)",4:"var(--s4)",5:"var(--s5)"};
+const REASONS = {
+  1:["受付ブロック（取次拒否）","担当者不在・離席","リスト情報が古い/番号違い","業界違い・領域違い","ガチャ切り"],
+  2:["冒頭で切られた（掴み不足）","名乗り/目的が伝わらない","明確な拒否（間に合ってる）","タイミング悪い（多忙・後日）"],
+  3:["ヒアリング不足（課題引き出せず）","価値が刺さらない（訴求弱い）","会話のテンポ感（主導権取れず）","ニーズなし（顕在化せず）"],
+  4:["決裁者違い（キーマンでない）","反論処理できず（切り返し不足）","緊急性を作れない","競合・既存で充足"],
+  5:[]
+};
+const REASON_STAGE_Q = {
+  1:"受付で止まった要因は？", 2:"接触で止まった要因は？",
+  3:"有効会話で止まった要因は？", 4:"クロージングで失敗した要因は？"
+};
+
+let S = { date:"", name:"", list:"", goal:93, apoGoal:3, calls:[] };
+let pendingStage = null;
+let pendingReason = null;
+
+function pickList(el, val){
+  document.querySelectorAll("#list-picker .lchip").forEach(c=>c.classList.remove("on"));
+  el.classList.add("on");
+  const other = document.getElementById("in-list");
+  if(val==="その他"){ other.classList.remove("hidden"); other.value=""; other.focus(); S.list=""; }
+  else { other.classList.add("hidden"); S.list=val; }
+}
+
+/* ---------- setup ---------- */
+(function initDate(){
+  const d = new Date();
+  const iso = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  document.getElementById("in-date").value = iso;
+})();
+
+function startSession(){
+  S.date = document.getElementById("in-date").value || "";
+  S.name = document.getElementById("in-name").value.trim();
+  const other = document.getElementById("in-list");
+  if(!other.classList.contains("hidden") && other.value.trim()) S.list = other.value.trim();
+  S.goal = parseInt(document.getElementById("in-goal").value)||0;
+  S.apoGoal = parseInt(document.getElementById("in-apo").value)||0;
+  enterTracker();
+}
+function resumeFromCode(){
+  const raw = document.getElementById("resume-box").value.trim();
+  try{
+    const obj = JSON.parse(atob(raw.replace(/\s/g,"")));
+    if(!obj || !Array.isArray(obj.calls)) throw 0;
+    S = Object.assign({date:"",name:"",list:"",goal:93,apoGoal:3,calls:[]}, obj);
+    document.getElementById("in-date").value = S.date;
+    document.getElementById("in-name").value = S.name;
+    document.getElementById("in-goal").value = S.goal;
+    document.getElementById("in-apo").value = S.apoGoal;
+    enterTracker();
+    toast("再開しました（"+S.calls.length+"件）");
+  }catch(e){ alert("引き継ぎコードが読み取れませんでした。全文をそのまま貼り付けてください。"); }
+}
+
+/* ---------- tracker flow ---------- */
+function enterTracker(){
+  document.getElementById("setup").classList.add("hidden");
+  document.getElementById("finish").classList.add("hidden");
+  document.getElementById("tracker").classList.remove("hidden");
+  backToStage();
+  render();
+}
+function pickStage(st){
+  if(st===5){ goToMemo(5,null); return; }
+  pendingStage = st;
+  document.getElementById("step-stage").classList.add("hidden");
+  const box = document.getElementById("step-reason");
+  box.classList.remove("hidden");
+  document.getElementById("rz-badge").textContent = st;
+  document.getElementById("rz-badge").style.background = STAGE_COLOR[st];
+  document.getElementById("rz-title").innerHTML = REASON_STAGE_Q[st]+"<small>タップして次へ</small>";
+  const list = document.getElementById("rz-list");
+  list.innerHTML = "";
+  REASONS[st].forEach(r=>{
+    const d = document.createElement("div");
+    d.className = "reason"; d.textContent = r;
+    d.onclick = ()=> goToMemo(st, r);
+    list.appendChild(d);
+  });
+}
+function backToStage(){
+  pendingStage = null; pendingReason = null;
+  document.getElementById("step-reason").classList.add("hidden");
+  document.getElementById("step-memo").classList.add("hidden");
+  document.getElementById("step-stage").classList.remove("hidden");
+}
+function goToMemo(stage, reason){
+  pendingStage = stage; pendingReason = reason;
+  document.getElementById("step-stage").classList.add("hidden");
+  document.getElementById("step-reason").classList.add("hidden");
+  const box = document.getElementById("step-memo");
+  box.classList.remove("hidden");
+  document.getElementById("mz-badge").textContent = stage;
+  document.getElementById("mz-badge").style.background = STAGE_COLOR[stage];
+  document.getElementById("mz-reason").textContent =
+    stage===5 ? "アポ獲得 🎯" : STAGE_SHORT[stage]+"止まり／"+reason;
+  const memo = document.getElementById("call-memo");
+  memo.value = "";
+  // 空メモでは「メモを残して次へ」を無効化（A案）
+  document.getElementById("memo-save-btn").disabled = true;
+  // 戻る先：アポ(5)は要因選択が無いので段階選択へ。それ以外は要因選択へ。
+  document.getElementById("memo-back-btn").textContent =
+    stage===5 ? "← 段階を選び直す" : "← 要因を選び直す";
+  // slight delay so the layout settles before focus (optional typing)
+  setTimeout(()=>memo.focus(), 60);
+}
+function backFromMemo(){
+  // メモ画面から1段戻る。アポは段階選択へ、それ以外は要因選択へ。
+  document.getElementById("step-memo").classList.add("hidden");
+  if(pendingStage===5){
+    pendingStage=null; pendingReason=null;
+    document.getElementById("step-stage").classList.remove("hidden");
+  } else {
+    pickStage(pendingStage); // 要因選択画面を再表示（選び直せる）
+  }
+}
+function saveCallMemo(skip){
+  const memo = skip ? "" : document.getElementById("call-memo").value.trim();
+  commitCall(pendingStage, pendingReason, memo);
+}
+function commitCall(stage, reason, memo){
+  S.calls.push({stage, reason, memo:memo||"", t:Date.now()});
+  backToStage();
+  render();
+  toast(stage===5 ? "アポ獲得！ 🎯" : "記録");
+}
+function undoLast(){
+  if(!S.calls.length){ toast("取消なし"); return; }
+  S.calls.pop(); render(); toast("取消しました");
+}
+
+/* ---------- render ---------- */
+function counts(){
+  const c = {1:0,2:0,3:0,4:0,5:0};
+  S.calls.forEach(x=> c[x.stage]++);
+  return c;
+}
+// how many reached at least stage k (funnel: reaching k means stage>=k)
+function reached(k){ return S.calls.filter(x=> x.stage>=k).length; }
+
+function render(){
+  const total = S.calls.length;
+  const apo = counts()[5];
+  const rate = S.goal? Math.round(total/S.goal*100):0;
+  document.getElementById("m-calls").textContent = total;
+  document.getElementById("m-apo").textContent = apo;
+  document.getElementById("m-rate").textContent = rate+"%";
+  document.getElementById("g-cur").textContent = total;
+  document.getElementById("g-goal").textContent = S.goal;
+  document.getElementById("goalfill").style.width = Math.min(100,rate)+"%";
+  const dstr = fmtDate(S.date);
+  document.getElementById("hdr-sub").textContent =
+    (S.name? S.name+"｜":"")+dstr+(S.list? "｜"+S.list:"");
+
+  // log strip (last 22)
+  const strip = document.getElementById("log-strip");
+  strip.innerHTML = "";
+  S.calls.slice(-22).forEach((x,i)=>{
+    const real = S.calls.length-Math.min(22,S.calls.length)+i+1;
+    const chip = document.createElement("span");
+    chip.className="chip-log";
+    chip.style.background = STAGE_COLOR[x.stage];
+    chip.textContent = real;
+    strip.appendChild(chip);
+  });
+
+  renderFunnel("funnel", true);
+}
+function renderFunnel(elId, live){
+  const total = S.calls.length || 1;
+  const el = document.getElementById(elId);
+  el.innerHTML = "";
+  const steps = [
+    {k:1, label:"架電", cls:"fb1", val:S.calls.length},
+    {k:2, label:"担当接触", cls:"fb2", val:reached(2)},
+    {k:3, label:"有効会話", cls:"fb3", val:reached(3)},
+    {k:4, label:"クロージング", cls:"fb4", val:reached(4)},
+    {k:5, label:"アポ獲得", cls:"fb5", val:reached(5)},
+  ];
+  const max = S.calls.length || 1;
+  steps.forEach(s=>{
+    const pct = Math.round(s.val/max*100);
+    const row = document.createElement("div"); row.className="frow";
+    row.innerHTML = `<span class="fl">${s.label}</span>
+      <div class="fbar-wrap"><div class="fbar ${s.cls}" style="width:${Math.max(pct,s.val>0?8:0)}%">${s.val}</div></div>
+      <span class="fr">${pct}%</span>`;
+    el.appendChild(row);
+  });
+}
+
+/* ---------- finish / report ---------- */
+function openFinish(){
+  document.getElementById("tracker").classList.add("hidden");
+  document.getElementById("finish").classList.remove("hidden");
+  buildFinish();
+  window.scrollTo(0,0);
+}
+function backToTracker(){
+  document.getElementById("finish").classList.add("hidden");
+  document.getElementById("done").classList.add("hidden");
+  document.getElementById("tracker").classList.remove("hidden");
+}
+function doneToFinish(){
+  // 労い画面 → まとめ画面（GOOD/MORE/NAを直す）
+  document.getElementById("done").classList.add("hidden");
+  document.getElementById("finish").classList.remove("hidden");
+  buildFinish();
+  window.scrollTo(0,0);
+}
+function endSession(){
+  const total=S.calls.length, apo=counts()[5];
+  const rate=S.goal? Math.round(total/S.goal*100):0;
+  const na=document.getElementById("na-box").value.trim();
+  // ねぎらい文言：成果に応じて出し分け（美談化せず、事実＋次の一手）
+  let head, msg;
+  if(apo>=S.apoGoal && S.apoGoal>0){
+    head="ナイスクロージング。目標達成。";
+    msg="アポ目標をクリア。今日の勝ち筋は、明日そのまま再現できる資産。<br>GOODに残した動きを、チームの共通トークに引き上げよう。";
+  } else if(rate>=100){
+    head="架電量、やり切った。";
+    msg="目標本数を完遂。量をこなした日は、要因データの精度が一番高い。<br>そのデータが、明日の一手を具体的にしてくれる。";
+  } else if(total>0){
+    head="今日もお疲れさまでした。";
+    msg="数字は事実として受け取る。届かなかった分は、次の設計材料。<br>NAに書いた一手だけ、明日ひとつ試す。それで十分前進する。";
+  } else {
+    head="お疲れさまでした。";
+    msg="記録はここまで。次回また続きから。";
+  }
+  document.getElementById("done-head").textContent=head;
+  document.getElementById("done-msg").innerHTML=msg;
+  document.getElementById("done-stats").innerHTML=
+    `<div class="ds"><div class="dn">${total}</div><div class="dl">架電</div></div>
+     <div class="ds"><div class="dn">${apo}</div><div class="dl">アポ</div></div>
+     <div class="ds"><div class="dn">${rate}%</div><div class="dl">目標達成</div></div>`;
+  document.getElementById("done-word").innerHTML =
+    na ? "明日の自分へ：<br>「"+escapeHtml(na)+"」" : "";
+  document.getElementById("finish").classList.add("hidden");
+  document.getElementById("done").classList.remove("hidden");
+  window.scrollTo(0,0);
+}
+function backToStart(){
+  // 引き継ぎ動作の検証用：セットアップに戻る。データはSに保持されたまま。
+  document.getElementById("done").classList.add("hidden");
+  document.getElementById("tracker").classList.add("hidden");
+  document.getElementById("finish").classList.add("hidden");
+  document.getElementById("setup").classList.remove("hidden");
+  window.scrollTo(0,0);
+}
+function bottleneck(){
+  // biggest drop-off between consecutive stages, weighted by absolute loss
+  const vals = {1:S.calls.length,2:reached(2),3:reached(3),4:reached(4),5:reached(5)};
+  const trans = [
+    {from:"架電",to:"担当接触",stage:1,loss:vals[1]-vals[2],base:vals[1]},
+    {from:"担当接触",to:"有効会話",stage:2,loss:vals[2]-vals[3],base:vals[2]},
+    {from:"有効会話",to:"クロージング",stage:3,loss:vals[3]-vals[4],base:vals[3]},
+    {from:"クロージング",to:"アポ",stage:4,loss:vals[4]-vals[5],base:vals[4]},
+  ];
+  let worst=trans[0];
+  trans.forEach(t=>{ if(t.loss>worst.loss) worst=t; });
+  return worst;
+}
+function reasonTallyFor(stage){
+  const t={};
+  S.calls.filter(x=>x.stage===stage && x.reason).forEach(x=> t[x.reason]=(t[x.reason]||0)+1);
+  return Object.entries(t).sort((a,b)=>b[1]-a[1]);
+}
+function topReason(stage){
+  const t=reasonTallyFor(stage);
+  return t.length? t[0][0]:null;
+}
+function buildFinish(){
+  const total=S.calls.length, apo=counts()[5];
+  const conv = total? Math.round(apo/total*100):0;
+  const rate = S.goal? Math.round(total/S.goal*100):0;
+  document.getElementById("f-calls").textContent=total;
+  document.getElementById("f-apo").textContent=apo;
+  document.getElementById("f-conv").textContent=conv+"%";
+  document.getElementById("f-rate").textContent=rate+"%";
+  document.getElementById("fin-sub").textContent=
+    (S.name? S.name+"｜":"")+fmtDate(S.date)+(S.list? "｜"+S.list:"");
+  renderFunnel("f-funnel", false);
+
+  // memo timeline
+  const mc=document.getElementById("f-memos");
+  const memos=S.calls.map((x,i)=>({...x,no:i+1})).filter(x=>x.memo);
+  if(memos.length){
+    mc.innerHTML="";
+    memos.forEach(x=>{
+      const it=document.createElement("div"); it.className="mt-item";
+      it.innerHTML=`<span class="mt-badge" style="background:${STAGE_COLOR[x.stage]}">${x.stage}</span>
+        <div class="mt-body"><span class="mt-no">#${x.no}・${STAGE_SHORT[x.stage]}</span><br>${escapeHtml(x.memo)}</div>`;
+      mc.appendChild(it);
+    });
+    document.getElementById("memo-card").classList.remove("hidden");
+  } else {
+    document.getElementById("memo-card").classList.add("hidden");
+  }
+
+  // bottleneck card
+  const b=bottleneck();
+  const tr=topReason(b.stage);
+  const lossPct = b.base? Math.round(b.loss/b.base*100):0;
+  document.getElementById("f-bottleneck").innerHTML =
+    `<div class="tag">最大のボトルネック</div>
+     <div class="big">${b.from} → ${b.to}　${b.loss}件が脱落（${lossPct}%）</div>
+     <div class="why">${tr? "最多要因：<b>"+tr+"</b>":"要因データなし"}。ここがアポ数を最も削っている。NAはこの段階に絞って書く。</div>`;
+
+  // breakdown per stage
+  const bd=document.getElementById("f-breakdown"); bd.innerHTML="";
+  [1,2,3,4].forEach(st=>{
+    const tally=reasonTallyFor(st);
+    if(!tally.length) return;
+    const maxN=tally[0][1];
+    const g=document.createElement("div"); g.className="rb-group";
+    let html=`<div class="rb-title"><span class="chip" style="background:${STAGE_COLOR[st]}"></span>${STAGE_SHORT[st]}で止まった（${tally.reduce((a,c)=>a+c[1],0)}件）</div>`;
+    tally.forEach(([r,n])=>{
+      html+=`<div class="rb-item"><span class="rbl">${r}</span><div class="rbbar"><i style="width:${Math.round(n/maxN*100)}%;background:${STAGE_COLOR[st]}"></i></div><span class="rbn">${n}</span></div>`;
+    });
+    g.innerHTML=html; bd.appendChild(g);
+  });
+  if(!bd.innerHTML) bd.innerHTML='<div class="mini">要因データがまだありません。</div>';
+
+  buildReport(); buildHandoff();
+}
+
+function buildReport(){
+  const call=S.calls.length;
+  const c2=reached(2), c3=reached(3), c4=reached(4), apo=reached(5); // 到達ベース
+  const good=document.getElementById("good-box").value.trim();
+  const more=document.getElementById("more-box").value.trim();
+  const na=document.getElementById("na-box").value.trim();
+  const pct=(num,den)=> den>0? Math.round(num/den*1000)/10 : 0; // 小数第1位
+  const dstr=fmtDateSlash(S.date);
+
+  let t="";
+  t+=`【IS日報】${dstr}　${S.name||""}\n`;
+  if(S.list) t+=`リスト：${S.list}\n`;
+  t+=`\n＜件数＞\n`;
+  t+=`call数：${call}\n`;
+  t+=`接触数：${c2}\n`;
+  t+=`有効会話数：${c3}\n`;
+  t+=`クロージング数：${c4}\n`;
+  t+=`アポ獲得数：${apo}\n`;
+  t+=`\n＜転換率＞\n`;
+  t+=`call to 接触率：${pct(c2,call)}%\n`;
+  t+=`接触 to 有効会話率：${pct(c3,c2)}%\n`;
+  t+=`有効会話 to クロージング率：${pct(c4,c3)}%\n`;
+  t+=`クロージング to 商談獲得率：${pct(apo,c4)}%\n`;
+  t+=`接触 to 商談獲得率：${pct(apo,c2)}%\n`;
+  t+=`call to 商談獲得率：${pct(apo,call)}%\n`;
+  t+=`\n＜GOOD＞\n${good||""}\n`;
+  t+=`\n＜MORE＞\n${more||""}\n`;
+  t+=`\n＜NA（GAPを埋めるアクション）＞\n${na||""}\n`;
+  // 集約用データを同梱（人間の日報は上、機械抽出用コードは最下部に隔離）
+  S.date=document.getElementById("in-date").value||S.date;
+  const code=btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+  t+=`\n━━━━━━━━━━━━━━━\n`;
+  t+=`▼集約用データ（消さずにこのまま投稿）\n`;
+  t+=`@@ACT@@${code}@@END@@\n`;
+  document.getElementById("report-text").textContent=t;
+}
+function buildHandoff(){
+  S.date=document.getElementById("in-date").value||S.date;
+  const code=btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+  document.getElementById("handoff-text").textContent=code;
+}
+
+/* ---------- tabs / copy ---------- */
+function switchTab(which){
+  const r=which==="report";
+  document.getElementById("tab-report").classList.toggle("active",r);
+  document.getElementById("tab-handoff").classList.toggle("active",!r);
+  document.getElementById("pane-report").classList.toggle("hidden",!r);
+  document.getElementById("pane-handoff").classList.toggle("hidden",r);
+  if(r) buildReport(); else buildHandoff();
+}
+function copyReport(){ buildReport(); copyText(document.getElementById("report-text").textContent); }
+function copyHandoff(){ buildHandoff(); copyText(document.getElementById("handoff-text").textContent); }
+function copyText(txt){
+  const ta=document.createElement("textarea"); ta.value=txt;
+  ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta);
+  ta.select();
+  try{ document.execCommand("copy"); toast("コピーしました"); }
+  catch(e){ if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(()=>toast("コピーしました")); } }
+  document.body.removeChild(ta);
+}
+
+/* ---------- utils ---------- */
+function fmtDate(iso){ if(!iso) return ""; const [y,m,d]=iso.split("-"); if(!d) return iso;
+  const wd=["日","月","火","水","木","金","土"][new Date(iso).getDay()]; return `${m}/${d}(${wd})`; }
+function fmtDateSlash(iso){ if(!iso) return ""; const [y,m,d]=iso.split("-"); if(!d) return iso; return `${y}/${m}/${d}`; }
+let toastTimer;
+function toast(msg){ const el=document.getElementById("toast"); el.textContent=msg; el.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove("show"),1400); }
+
+function escapeHtml(s){ return s.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+// メモ入力の有無で「メモを残して次へ」を有効/無効化（A案）
+document.getElementById("call-memo").addEventListener("input",()=>{
+  document.getElementById("memo-save-btn").disabled = document.getElementById("call-memo").value.trim()==="";
+});
+// live-update GOOD/MORE/NA into report while typing
+["good-box","more-box","na-box"].forEach(id=>{
+  document.getElementById(id).addEventListener("input",()=>{ if(!document.getElementById("pane-report").classList.contains("hidden")) buildReport(); });
+});
+</script>
+</body>
+</html>
