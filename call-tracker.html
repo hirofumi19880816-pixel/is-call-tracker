@@ -8,7 +8,7 @@
   :root{
     --bg:#0f1218; --panel:#171c26; --panel2:#1e2532; --line:#2b3444;
     --ink:#e8edf5; --sub:#8a97ab; --mut:#5d6b81;
-    --s1:#3b82f6; --s2:#22a2c4; --s3:#38b48b; --s4:#e0a92c; --s5:#e7533b;
+    --s0:#64748b; --s1:#3b82f6; --s2:#22a2c4; --s3:#38b48b; --s4:#e0a92c; --s5:#e7533b;
     --ok:#38b48b; --warn:#e0a92c; --bad:#e7533b;
     --accent:#e7533b;
     --r:14px;
@@ -60,7 +60,7 @@
     font-weight:800;font-size:13px;color:#0b0e13;flex-shrink:0;}
   .stage .tx{font-size:14.5px;font-weight:700;}
   .stage .hint{font-size:11px;color:var(--mut);margin-left:auto;}
-  .s1 .dot{background:var(--s1);} .s2 .dot{background:var(--s2);}
+  .s0 .dot{background:var(--s0);} .s1 .dot{background:var(--s1);} .s2 .dot{background:var(--s2);}
   .s3 .dot{background:var(--s3);} .s4 .dot{background:var(--s4);} .s5 .dot{background:var(--s5);}
 
   /* reason picker */
@@ -238,6 +238,7 @@
   <div id="step-stage" class="card">
     <div class="stage-q">この架電、どこまで進んだ？</div>
     <div class="stages">
+      <div class="stage s0" onclick="pickStage(0)"><span class="dot">－</span><span class="tx">不通・未接続</span><span class="hint">そもそも繋がらない</span></div>
       <div class="stage s1" onclick="pickStage(1)"><span class="dot">1</span><span class="tx">受付ブロック止まり</span><span class="hint">突破できず</span></div>
       <div class="stage s2" onclick="pickStage(2)"><span class="dot">2</span><span class="tx">担当接触止まり</span><span class="hint">会話入れず</span></div>
       <div class="stage s3" onclick="pickStage(3)"><span class="dot">3</span><span class="tx">有効会話止まり</span><span class="hint">前進せず</span></div>
@@ -384,11 +385,12 @@
 <script>
 /* ---------- data model ---------- */
 const STAGE_LABEL = {
-  1:"受付ブロック止まり", 2:"担当接触止まり", 3:"有効会話止まり", 4:"クロージング止まり", 5:"アポ獲得"
+  0:"不通・未接続", 1:"受付ブロック止まり", 2:"担当接触止まり", 3:"有効会話止まり", 4:"クロージング止まり", 5:"アポ獲得"
 };
-const STAGE_SHORT = {1:"受付",2:"接触",3:"有効会話",4:"クロージング",5:"アポ"};
-const STAGE_COLOR = {1:"var(--s1)",2:"var(--s2)",3:"var(--s3)",4:"var(--s4)",5:"var(--s5)"};
+const STAGE_SHORT = {0:"不通",1:"受付",2:"接触",3:"有効会話",4:"クロージング",5:"アポ"};
+const STAGE_COLOR = {0:"var(--s0)",1:"var(--s1)",2:"var(--s2)",3:"var(--s3)",4:"var(--s4)",5:"var(--s5)"};
 const REASONS = {
+  0:["呼び出すが応答なし","留守番電話","話し中","番号が使われていない（欠番・解約）","着信拒否・システムブロック"],
   1:["受付ブロック（取次拒否）","担当者不在・離席","リスト情報が古い/番号違い","業界違い・領域違い","ガチャ切り"],
   2:["冒頭で切られた（掴み不足）","名乗り/目的が伝わらない","明確な拒否（間に合ってる）","タイミング悪い（多忙・後日）"],
   3:["ヒアリング不足（課題引き出せず）","価値が刺さらない（訴求弱い）","会話のテンポ感（主導権取れず）","ニーズなし（顕在化せず）"],
@@ -396,7 +398,7 @@ const REASONS = {
   5:[]
 };
 const REASON_STAGE_Q = {
-  1:"受付で止まった要因は？", 2:"接触で止まった要因は？",
+  0:"そもそも繋がらなかった要因は？", 1:"受付で止まった要因は？", 2:"接触で止まった要因は？",
   3:"有効会話で止まった要因は？", 4:"クロージングで失敗した要因は？"
 };
 
@@ -457,7 +459,7 @@ function pickStage(st){
   document.getElementById("step-stage").classList.add("hidden");
   const box = document.getElementById("step-reason");
   box.classList.remove("hidden");
-  document.getElementById("rz-badge").textContent = st;
+  document.getElementById("rz-badge").textContent = st===0 ? "－" : st;
   document.getElementById("rz-badge").style.background = STAGE_COLOR[st];
   document.getElementById("rz-title").innerHTML = REASON_STAGE_Q[st]+"<small>タップして次へ</small>";
   const list = document.getElementById("rz-list");
@@ -481,10 +483,12 @@ function goToMemo(stage, reason){
   document.getElementById("step-reason").classList.add("hidden");
   const box = document.getElementById("step-memo");
   box.classList.remove("hidden");
-  document.getElementById("mz-badge").textContent = stage;
+  document.getElementById("mz-badge").textContent = stage===0 ? "－" : stage;
   document.getElementById("mz-badge").style.background = STAGE_COLOR[stage];
   document.getElementById("mz-reason").textContent =
-    stage===5 ? "アポ獲得 🎯" : STAGE_SHORT[stage]+"止まり／"+reason;
+    stage===5 ? "アポ獲得 🎯" :
+    stage===0 ? "不通・未接続／"+reason :
+    STAGE_SHORT[stage]+"止まり／"+reason;
   const memo = document.getElementById("call-memo");
   memo.value = "";
   // 空メモでは「メモを残して次へ」を無効化（A案）
@@ -678,7 +682,7 @@ function buildFinish(){
     mc.innerHTML="";
     memos.forEach(x=>{
       const it=document.createElement("div"); it.className="mt-item";
-      it.innerHTML=`<span class="mt-badge" style="background:${STAGE_COLOR[x.stage]}">${x.stage}</span>
+      it.innerHTML=`<span class="mt-badge" style="background:${STAGE_COLOR[x.stage]}">${x.stage===0?"－":x.stage}</span>
         <div class="mt-body"><span class="mt-no">#${x.no}・${STAGE_SHORT[x.stage]}</span><br>${escapeHtml(x.memo)}</div>`;
       mc.appendChild(it);
     });
@@ -698,12 +702,13 @@ function buildFinish(){
 
   // breakdown per stage
   const bd=document.getElementById("f-breakdown"); bd.innerHTML="";
-  [1,2,3,4].forEach(st=>{
+  [0,1,2,3,4].forEach(st=>{
     const tally=reasonTallyFor(st);
     if(!tally.length) return;
     const maxN=tally[0][1];
     const g=document.createElement("div"); g.className="rb-group";
-    let html=`<div class="rb-title"><span class="chip" style="background:${STAGE_COLOR[st]}"></span>${STAGE_SHORT[st]}で止まった（${tally.reduce((a,c)=>a+c[1],0)}件）</div>`;
+    const titleTxt = st===0 ? "不通・未接続" : STAGE_SHORT[st]+"で止まった";
+    let html=`<div class="rb-title"><span class="chip" style="background:${STAGE_COLOR[st]}"></span>${titleTxt}（${tally.reduce((a,c)=>a+c[1],0)}件）</div>`;
     tally.forEach(([r,n])=>{
       html+=`<div class="rb-item"><span class="rbl">${r}</span><div class="rbbar"><i style="width:${Math.round(n/maxN*100)}%;background:${STAGE_COLOR[st]}"></i></div><span class="rbn">${n}</span></div>`;
     });
