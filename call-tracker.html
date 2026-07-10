@@ -236,6 +236,11 @@
 
   <!-- STEP A: stage -->
   <div id="step-stage" class="card">
+    <div class="row between" style="margin-bottom:8px">
+      <span class="sub" style="font-size:11px;font-weight:700">この架電のリスト</span>
+    </div>
+    <div class="list-picker" id="call-list-picker" style="margin-bottom:14px"></div>
+    <input type="text" id="call-list-other" class="hidden" placeholder="媒体名を入力" style="margin-bottom:14px">
     <div class="stage-q">この架電、どこまで進んだ？</div>
     <div class="stages">
       <div class="stage s0" onclick="pickStage(0)"><span class="dot">－</span><span class="tx">不通・未接続</span><span class="hint">そもそも繋がらない</span></div>
@@ -369,6 +374,7 @@
     <div class="done-msg" id="done-msg"></div>
     <div class="done-stats" id="done-stats"></div>
     <div class="done-word" id="done-word"></div>
+    <div class="mini" id="sheet-status" style="text-align:center;margin-top:10px"></div>
   </div>
   <div class="done-actions">
     <button class="btn btn-primary btn-block" style="padding:15px;font-size:15px" onclick="copyReport()">📋 日報をコピー（コード同梱）</button>
@@ -406,6 +412,113 @@ let S = { date:"", name:"", list:"", goal:93, apoGoal:3, calls:[] };
 let pendingStage = null;
 let pendingReason = null;
 
+/* ---------- スプレッドシート連携 ---------- */
+// GASのWebアプリURLをここに設定する（.../exec の形）。空のままなら送信をスキップする。
+const SHEET_WEBHOOK_URL = "";
+
+function buildTallyForSheet(){
+  const out=[];
+  [0,1,2,3,4].forEach(st=>{
+    reasonTallyFor(st).forEach(([reasonText,count])=>{
+      const stageLabel = st===0 ? "不通・未接続" : STAGE_SHORT[st];
+      out.push({stageLabel, reasonLabel:reasonText, count});
+    });
+  });
+  return out;
+}
+function sendToSheet(){
+  if(!SHEET_WEBHOOK_URL) return; // 未設定なら何もしない
+  const call=S.calls.length, c2=reached(2), c3=reached(3), c4=reached(4), apo=reached(5);
+  const pct=(n,d)=> d>0? Math.round(n/d*1000)/10 : 0;
+  const payload = {
+    name: S.name, date: S.date, list: usedLists().join("、"), goal: S.goal, apoGoal: S.apoGoal,
+    call, c2, c3, c4, apo,
+    rate_call_c2: pct(c2,call), rate_c2_c3: pct(c3,c2), rate_c3_c4: pct(c4,c3),
+    rate_c4_apo: pct(apo,c4), rate_c2_apo: pct(apo,c2), rate_call_apo: pct(apo,call),
+    good: document.getElementById("good-box").value.trim(),
+    more: document.getElementById("more-box").value.trim(),
+    na: document.getElementById("na-box").value.trim(),
+    tally: buildTallyForSheet()
+  };
+  const statusEl = document.getElementById("sheet-status");
+  if(statusEl) statusEl.textContent = "スプシへ送信中…";
+  fetch(SHEET_WEBHOOK_URL, {
+    method: "POST",
+    headers: {"Content-Type":"text/plain;charset=utf-8"}, // preflightを避けるための定石（GAS Webアプリ向け）
+    body: JSON.stringify(payload)
+  }).then(()=>{
+    if(statusEl) statusEl.textContent = "✓ スプシへ送信しました";
+  }).catch(()=>{
+    if(statusEl) statusEl.textContent = "送信できませんでした（後でスプシをご確認ください）";
+  });
+}
+
+/* ---------- compact encode/decode（集約用データの軽量化） ---------- */
+// 区切りにはキーボードで入力されない制御文字を使う（メモ等の自由入力と衝突しない）
+const FS = String.fromCharCode(31); // stage / reasonIndex / memo の区切り
+const RS = String.fromCharCode(30); // 架電レコード同士の区切り
+const GS = String.fromCharCode(29); // ヘッダー項目の区切り
+
+function encodeState(state){
+  const header = [state.date, state.name, state.list, state.goal, state.apoGoal].join(GS);
+  const callsStr = state.calls.map(c=>{
+    const idx = (c.reason==null) ? "" : (REASONS[c.stage]||[]).indexOf(c.reason);
+    return c.stage + FS + (idx>=0? idx : "") + FS + (c.memo||"") + FS + (c.list||"");
+  }).join(RS);
+  const raw = header + GS + callsStr;
+  return btoa(unescape(encodeURIComponent(raw)));
+}
+function decodeState(code){
+  const raw = decodeURIComponent(escape(atob(code)));
+  if(raw.trim().startsWith("{")){
+    // 旧形式（このアップデート以前に発行されたコード）との互換性維持
+    const obj = JSON.parse(raw);
+    if(!obj || !Array.isArray(obj.calls)) throw new Error("invalid");
+    return obj;
+  }
+  const parts = raw.split(GS);
+  const [date,name,list,goal,apoGoal, ...rest] = parts;
+  const callsStr = rest.join(GS);
+  const calls = callsStr.length ? callsStr.split(RS).map(s=>{
+    const [stageStr, idxStr, memo, callList] = s.split(FS);
+    const stage = parseInt(stageStr,10);
+    const reason = idxStr==="" ? null : ((REASONS[stage]||[])[parseInt(idxStr,10)] ?? null);
+    // 架電ごとのリストが無い旧コードは、セッションのリストにフォールバック
+    return {stage, reason, memo: memo||"", list: (callList!==undefined && callList!=="") ? callList : list};
+  }) : [];
+  return {date, name, list, goal:parseInt(goal)||0, apoGoal:parseInt(apoGoal)||0, calls};
+}
+
+/* ---------- 集約用の最小エンコード（日報同梱用・要因タリーのみ） ---------- */
+// 個々の架電記録やメモは持たず、「stage×reasonの組み合わせごとの件数」＋転換率の5数値のみ。
+// 架電数がどれだけ増えても、コード長は要因の種類数（最大25通り程度）に比例するだけで済む。
+function encodeAggregate(state, call, c2, c3, c4, apo){
+  const header = [state.date, state.name, state.list, state.goal, state.apoGoal, call, c2, c3, c4, apo].join(GS);
+  const entries = [];
+  [0,1,2,3,4].forEach(st=>{
+    reasonTallyFor(st).forEach(([reasonText,count])=>{
+      const idx = (REASONS[st]||[]).indexOf(reasonText);
+      if(idx>=0) entries.push(st+FS+idx+FS+count);
+    });
+  });
+  const raw = header + GS + entries.join(RS);
+  return btoa(unescape(encodeURIComponent(raw)));
+}
+function decodeAggregate(code){
+  const raw = decodeURIComponent(escape(atob(code)));
+  const parts = raw.split(GS);
+  const [date,name,list,goal,apoGoal,call,c2,c3,c4,apo, ...rest] = parts;
+  const tallyStr = rest.join(GS);
+  const tally = tallyStr.length ? tallyStr.split(RS).map(e=>{
+    const [stageStr,idxStr,countStr] = e.split(FS);
+    const stage = parseInt(stageStr,10), idx = parseInt(idxStr,10), count = parseInt(countStr,10);
+    return {stage, reason:(REASONS[stage]||[])[idx] ?? null, count};
+  }) : [];
+  return {date, name, list, goal:parseInt(goal)||0, apoGoal:parseInt(apoGoal)||0,
+    call:parseInt(call)||0, c2:parseInt(c2)||0, c3:parseInt(c3)||0, c4:parseInt(c4)||0, apo:parseInt(apo)||0,
+    tally};
+}
+
 function pickList(el, val){
   document.querySelectorAll("#list-picker .lchip").forEach(c=>c.classList.remove("on"));
   el.classList.add("on");
@@ -433,7 +546,7 @@ function startSession(){
 function resumeFromCode(){
   const raw = document.getElementById("resume-box").value.trim();
   try{
-    const obj = JSON.parse(atob(raw.replace(/\s/g,"")));
+    const obj = decodeState(raw.replace(/\s/g,""));
     if(!obj || !Array.isArray(obj.calls)) throw 0;
     S = Object.assign({date:"",name:"",list:"",goal:93,apoGoal:3,calls:[]}, obj);
     document.getElementById("in-date").value = S.date;
@@ -446,10 +559,55 @@ function resumeFromCode(){
 }
 
 /* ---------- tracker flow ---------- */
+let currentList = ""; // その架電で使うリスト（変更しない限り前回の選択を引き継ぐ）
+const LIST_OPTIONS = ["Wantedly","Engage","ハローワーク"];
+
+function buildCallListOptions(){
+  const opts = [...LIST_OPTIONS];
+  if(S.list && !opts.includes(S.list)) opts.unshift(S.list); // セッション開始時のカスタム値を先頭に
+  return opts;
+}
+function renderCallListPicker(){
+  const wrap = document.getElementById("call-list-picker");
+  if(!wrap) return;
+  wrap.innerHTML = "";
+  buildCallListOptions().forEach(name=>{
+    const chip = document.createElement("span");
+    chip.className = "lchip" + (currentList===name ? " on" : "");
+    chip.textContent = name;
+    chip.onclick = ()=> pickCallList(name);
+    wrap.appendChild(chip);
+  });
+  const otherChip = document.createElement("span");
+  const isOther = !buildCallListOptions().includes(currentList);
+  otherChip.className = "lchip" + (isOther ? " on" : "");
+  otherChip.textContent = isOther && currentList ? currentList : "その他";
+  otherChip.onclick = ()=> pickCallList("その他");
+  wrap.appendChild(otherChip);
+}
+function pickCallList(name){
+  const otherInput = document.getElementById("call-list-other");
+  if(name==="その他"){
+    otherInput.classList.remove("hidden"); otherInput.value=""; otherInput.focus();
+    return;
+  }
+  otherInput.classList.add("hidden");
+  currentList = name;
+  renderCallListPicker();
+}
+document.getElementById("call-list-other").addEventListener("change", ()=>{
+  const v = document.getElementById("call-list-other").value.trim();
+  if(v){ currentList = v; document.getElementById("call-list-other").classList.add("hidden"); renderCallListPicker(); }
+});
+
 function enterTracker(){
   document.getElementById("setup").classList.add("hidden");
   document.getElementById("finish").classList.add("hidden");
   document.getElementById("tracker").classList.remove("hidden");
+  // 新規開始ならセッションのリスト、途中再開なら直前の架電のリストを引き継ぐ
+  const lastCall = S.calls.length ? S.calls[S.calls.length-1] : null;
+  currentList = (lastCall && lastCall.list) ? lastCall.list : (S.list || "");
+  renderCallListPicker();
   backToStage();
   render();
 }
@@ -514,10 +672,16 @@ function saveCallMemo(skip){
   commitCall(pendingStage, pendingReason, memo);
 }
 function commitCall(stage, reason, memo){
-  S.calls.push({stage, reason, memo:memo||"", t:Date.now()});
+  S.calls.push({stage, reason, memo:memo||"", list: currentList||S.list||"", t:Date.now()});
   backToStage();
   render();
   toast(stage===5 ? "アポ獲得！ 🎯" : "記録");
+}
+function usedLists(){
+  // その日実際に使われたリストの集合（重複なし・出現順）。架電が無ければセッションのリストにフォールバック。
+  const seen = [];
+  S.calls.forEach(c=>{ if(c.list && !seen.includes(c.list)) seen.push(c.list); });
+  return seen.length ? seen : (S.list ? [S.list] : []);
 }
 function undoLast(){
   if(!S.calls.length){ toast("取消なし"); return; }
@@ -545,7 +709,7 @@ function render(){
   document.getElementById("goalfill").style.width = Math.min(100,rate)+"%";
   const dstr = fmtDate(S.date);
   document.getElementById("hdr-sub").textContent =
-    (S.name? S.name+"｜":"")+dstr+(S.list? "｜"+S.list:"");
+    (S.name? S.name+"｜":"")+dstr+(currentList? "｜"+currentList:"");
 
   // log strip (last 22)
   const strip = document.getElementById("log-strip");
@@ -631,6 +795,7 @@ function endSession(){
     na ? "明日の自分へ：<br>「"+escapeHtml(na)+"」" : "";
   document.getElementById("finish").classList.add("hidden");
   document.getElementById("done").classList.remove("hidden");
+  sendToSheet(); // 労い画面表示と並行してスプシへ送信（未設定なら何もしない・失敗しても他の動作はブロックしない）
   window.scrollTo(0,0);
 }
 function backToStart(){
@@ -671,8 +836,9 @@ function buildFinish(){
   document.getElementById("f-apo").textContent=apo;
   document.getElementById("f-conv").textContent=conv+"%";
   document.getElementById("f-rate").textContent=rate+"%";
+  const finListStr = usedLists().join("、");
   document.getElementById("fin-sub").textContent=
-    (S.name? S.name+"｜":"")+fmtDate(S.date)+(S.list? "｜"+S.list:"");
+    (S.name? S.name+"｜":"")+fmtDate(S.date)+(finListStr? "｜"+finListStr:"");
   renderFunnel("f-funnel", false);
 
   // memo timeline
@@ -730,7 +896,8 @@ function buildReport(){
 
   let t="";
   t+=`【IS日報】${dstr}　${S.name||""}\n`;
-  if(S.list) t+=`リスト：${S.list}\n`;
+  const usedListStr = usedLists().join("、");
+  if(usedListStr) t+=`リスト：${usedListStr}\n`;
   t+=`\n＜件数＞\n`;
   t+=`call数：${call}\n`;
   t+=`接触数：${c2}\n`;
@@ -747,9 +914,9 @@ function buildReport(){
   t+=`\n＜GOOD＞\n${good||""}\n`;
   t+=`\n＜MORE＞\n${more||""}\n`;
   t+=`\n＜NA（GAPを埋めるアクション）＞\n${na||""}\n`;
-  // 集約用データを同梱（人間の日報は上、機械抽出用コードは最下部に隔離）
+  // 集約用データを同梱（人間の日報は上、機械抽出用コードは最下部に隔離。要因タリーのみ・メモや個票は含まない）
   S.date=document.getElementById("in-date").value||S.date;
-  const code=btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+  const code=encodeAggregate(S, call, c2, c3, c4, apo);
   t+=`\n━━━━━━━━━━━━━━━\n`;
   t+=`▼集約用データ（消さずにこのまま投稿）\n`;
   t+=`@@ACT@@${code}@@END@@\n`;
@@ -757,7 +924,7 @@ function buildReport(){
 }
 function buildHandoff(){
   S.date=document.getElementById("in-date").value||S.date;
-  const code=btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+  const code=encodeState(S);
   document.getElementById("handoff-text").textContent=code;
 }
 
