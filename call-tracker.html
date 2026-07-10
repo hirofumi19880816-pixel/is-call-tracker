@@ -84,6 +84,7 @@
   .frow .fr{width:52px;text-align:right;font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums;}
   .fb1{background:var(--s1);} .fb2{background:var(--s2);} .fb3{background:var(--s3);}
   .fb4{background:var(--s4);} .fb5{background:var(--s5);}
+  .fb-total{background:var(--mut);}
 
   /* bottleneck */
   .bottleneck{background:linear-gradient(135deg,#2a1a17,#1e2532);border:1px solid #4a2b24;
@@ -730,7 +731,8 @@ function renderFunnel(elId, live){
   const el = document.getElementById(elId);
   el.innerHTML = "";
   const steps = [
-    {k:1, label:"架電", cls:"fb1", val:S.calls.length},
+    {k:0, label:"架電", cls:"fb-total", val:S.calls.length},
+    {k:1, label:"受付到達", cls:"fb1", val:reached(1)},
     {k:2, label:"担当接触", cls:"fb2", val:reached(2)},
     {k:3, label:"有効会話", cls:"fb3", val:reached(3)},
     {k:4, label:"クロージング", cls:"fb4", val:reached(4)},
